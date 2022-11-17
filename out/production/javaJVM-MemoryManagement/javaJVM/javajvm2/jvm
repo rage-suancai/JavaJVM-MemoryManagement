@@ -1,0 +1,113 @@
+堆
+堆是整个java应用程序共享的区域 也是整个虚拟机最大的一块内存空间 而此区域的职责就是存放和管理对象和数组 而我们马上要提到的垃圾回收机制也是主要作用于这一部分内存区域
+
+方法区
+方法区也是整个java应用程序共享的区域 它用于存储所有的类信息 常量 静态变量 动态编译缓存等数据 可以大致分为两个部分 一个是类信息表 一个是运行时常量池 方法区也是我们要重点介绍的部分
+
+                                          ----------------------方法区-----------------------
+                                           class1               class2               class3
+                                           类信息                 类信息                类信息
+                                          类常量池-------------->类常量池-------------->类常量池------------->
+                                         字段 方法信息           字段 方法信息          字段 方法信息           |
+                                      类加载器 类实例引用      类加载器 类实例引用      类加载器 类实例引用        |
+                                           方法表                 方法表                方法表               |
+                                      --------------------------------------------------------------------|
+                                                                                                          |
+                                                             [运行时常量池]<--------------------------------|
+
+首先类信息表中存放的是当前应用程序加载的所有类信息 包括类的版本 字段 方法 接口等信息 同时会将编译时生成的常量池数据全部存放到运行时常量池中
+当然 常量也并不是只能从类信息中获取 在程序运行时 也有可能会有新的常量进入到常量池
+
+其实我们的String类正是利用了常量池进行优化 这里我们编写了一个测试用例:
+                    public class Main {
+
+                        public static void main(String[] args) {
+
+                            String str1 = new String("abc");
+                            String str2 = new String("abc");
+                            System.out.println(str1 == str2);
+                            System.out.println(str1.equals(str2));
+
+                        }
+
+                    }
+
+得到的结果也是显而易见的 由于str1和str2是单独创建的两个对象 那么这两个对象实际上会在堆中存放 保存在不同的地址:
+
+                                                                               堆                   方法区
+                    String str1 = new String("abc"); -----------------> 地址:123456("abc")           ....
+                    String str2 = new String("abc"); -----------------> 地址:456789("abc")
+
+所以当我们使用==判断时 得到的结果false 而使用equals时因为比较的是值 所以得到true 现在我们来稍微修改一下:
+                    public class Main {
+
+                        public static void main(String[] args) {
+
+                            String str1 = ("abc");
+                            String str2 = ("abc");
+                            System.out.println(str1 == str2);
+                            System.out.println(str1.equals(str2));
+
+                        }
+
+                    }
+
+现在我们没有使用new的形式 而是直接使用双引号创建 那么这时得到的结果就变成了两个true 这是为什么呢 这其实是因为我们直接使用双引号赋值
+会先在常量池中查找是否存在相同的字符串若存在 则将引用直接指向该字符串 若不存在 则在常量池中生成一个字符串 再将引用指向该字符串:
+
+                                                                               堆                    方法区(运行时常量池)
+                    String str1 = new String("abc"); -------------------------------------------------> 地址:123456
+                    String str2 = new String("abc"); ------------------------------------------------->    "abc"
+
+实际上两次调用String的intern()方法 和上面的效果差不多 也是第一次调用会将堆中字符串复制并放入常量池中
+第二次通过此方法获取字符串时 会查看常量池中是否包含 如果包含那么会直接返回常量池中字符串的地址:
+                    public static void main(String[] args) {
+
+                        // 不能直接写"abc" 双引号的形式 写了就直接在常量池里面吧abc创好了
+                        String str1 = new String("ab")+new String("c");
+                        String str2 = new String("ab")+new String("c");
+                        System.out.println(str1.intern() == str2.intern());
+                        System.out.println(str1.equals(str2));
+
+                    }
+
+                                                                                              堆                         方法区(运行时常量池)
+                    String str1 = new String("abc")+new String("c"); --------指向------->地址:123456("abc")-----复制一份-----> 地址:666666
+                    String str2 = new String("abc")+new String("c"); --------指向------->地址:456789("abc")--intern()--^        "abc"
+
+所以上述结果中得到的依然是两个true 在JDK1.7之后 稍微有一些区别 在调用intern()方法时 当常量池中没有对应的字符串时 不会再进行复制操作 而是将其直接修改为指向当前字符串堆中的引用
+
+                                                                                              堆                         方法区(运行时常量池)
+                    String str1 = new String("abc")+new String("c"); --------指向------->地址:123456("abc")<-------指向------- 地址:666666
+                                     str1.intern(); --------------------------------intern()-------------------------------->  "abc"
+
+                    public static void main(String[] args) {
+
+                      	//不能直接写"abc" 双引号的形式 写了就直接在常量池里面吧abc创好了
+                        String str1 = new String("ab")+new String("c");
+                        System.out.println(str1.intern() == str1);
+
+                    }
+
+                    public static void main(String[] args) {
+
+                        String str1 = new String("ab")+new String("c");
+                        String str2 = new String("ab")+new String("c");
+
+                        System.out.println(str1 == str1.intern());
+                        System.out.println(str2.intern() == str1);
+
+                    }
+
+所以最后我们会发现 str1.intern()和str1都是同一个对象 结果为true
+
+值得注意的是 在JDK7之后 字符串常量池从方法区移动到了堆中
+
+最后我们再来进行一个总结 各个内存区域的用途:
+    > (线程独有) 程序计数器: 保存当前程序的执行位置
+    > (线程独有) 虚拟机栈: 通过栈帧来维持方法调用顺序 帮助控制程序有序运行
+    > (线程独有) 本地方法栈: 同上 作用本地方法
+    > 堆: 所有的对象和数组都在这里保存
+    > 方法区: 类信息 即时编译器的代码缓存 运行时常量池
+
+当然 这些内存区域划分仅仅是概念上的 具体的实现过程我们后面还会提到

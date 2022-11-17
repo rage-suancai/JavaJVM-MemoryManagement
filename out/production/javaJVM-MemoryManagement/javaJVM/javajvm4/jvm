@@ -1,0 +1,58 @@
+申请堆外内存
+除了堆内存可以存放对数据以外 我们也可以申请堆外内存(直接内存) 也就是不受JVM管控的内存区域 这部分区域的内存需要我们自行区申请和释放 实际上本质就是JVM通过C/C++调用
+malloc函数申请的内存 当然得我们自己去释放了 不过虽然是直接内存 不会受到堆内存容量限制 但是依然会受到本机最大内存的限制 所以还是有可能抛出OutOfMemoryError异常
+
+这里我们需要提到一个堆外内存操作类: Unsafe 就像它的名字一样 虽然Java提供堆外内存的操作类 但是实际上它是不安全的 只有你完全了解底层原理并且能够合理控制堆外内存 才能安全地使用堆外内存
+
+注意这个类不让我们new 也没有直接获取方式(压根就没想让我们用):
+                    public final class Unsafe {
+
+                        private static native void registerNatives();
+                        static {
+                            registerNatives();
+                            sun.reflect.Reflection.registerMethodsToFilter(Unsafe.class, "getUnsafe");
+                        }
+
+                        private Unsafe() {}
+
+                        private static final Unsafe theUnsafe = new Unsafe();
+
+                        @CallerSensitive
+                        public static Unsafe getUnsafe() {
+                            Class<?> caller = Reflection.getCallerClass();
+                            if (!VM.isSystemDomainLoader(caller.getClassLoader()))
+                                throw new SecurityException("Unsafe");   // 不是JDK的类 不让用
+                            return theUnsafe;
+                        }
+
+所以我们这里通过反射给它giao出来:
+                    public static void main(String[] args) throws IllegalAccessException {
+
+                        Field unsafeField = Unsafe.class.getDeclaredFields()[0];
+                        unsafeField.setAccessible(true);
+                        Unsafe unsafe = (Unsafe) unsafeField.get(null);
+
+                    }
+
+成功拿到Unsafe类之后 我们就可以开始申请堆外内存了 比如我们下载想要申请一个int大小的内存空间 并在此空间中存放一个int类型的数据:
+                    public static void main(String[] args) throws IllegalAccessException {
+
+                        Field unsafeField = Unsafe.class.getDeclaredFields()[0];
+                        unsafeField.setAccessible(true);
+                        Unsafe unsafe = (Unsafe) unsafeField.get(null);
+
+                        // 申请4字节大小的内存空间 并得到对应位置的地址
+                        long address = unsafe.allocateMemory(4);
+                        // 在对应的地址上设定int值
+                        unsafe.putInt(address, 6666666);
+                        // 获取对应地址是的Int型数值
+                        System.out.println(unsafe.getInt(address));
+                        // 释放申请到的内容
+                        unsafe.freeMemory(address);
+
+                        // 由于内存已经释放 这时数据就没了
+                        System.out.println(unsafe.getInt(address));
+
+                    }
+
+我们可以来看一下allocateMemory底层是如何调用的 这是一个native方法 我们来看一下C++源码:
